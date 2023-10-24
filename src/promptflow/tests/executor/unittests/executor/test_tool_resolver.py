@@ -9,7 +9,7 @@ from promptflow._core.tools_manager import ToolLoader
 from promptflow._sdk.entities import CustomConnection, CustomStrongTypeConnection
 from promptflow.connections import AzureOpenAIConnection
 from promptflow.contracts.flow import InputAssignment, InputValueType, Node, ToolSource, ToolSourceType
-from promptflow.contracts.tool import InputDefinition, Secret, Tool, ToolType, ValueType
+from promptflow.contracts.tool import InputDefinition, Secret, Tool, ToolType
 from promptflow.contracts.types import PromptTemplate
 from promptflow.exceptions import UserErrorException
 from promptflow.executor._errors import (
@@ -174,21 +174,7 @@ class TestToolResolver:
         message = "'AzureOpenAIConnection' is not supported, valid types ['CustomConnection']"
         assert message in str(e.value), "Expected: {}, Actual: {}".format(message, str(e.value))
 
-        # Case 3: Literal value, type mismatch
-        tool = Tool(name="mock", type="python", inputs={"int_input": InputDefinition(type=[ValueType.INT])})
-        node = Node(
-            name="mock",
-            tool=tool,
-            inputs={"int_input": InputAssignment(value="invalid", value_type=InputValueType.LITERAL)},
-        )
-        connections = {}
-        with pytest.raises(NodeInputValidationError) as e:
-            tool_resolver = ToolResolver(working_dir=None, connections=connections)
-            tool_resolver._convert_node_literal_input_types(node, tool)
-        message = "value invalid is not type int"
-        assert message in str(e.value), "Expected: {}, Actual: {}".format(message, str(e.value))
-
-        # Case 4: Unresolved value, like newly added type not in old version ValueType enum
+        # Case 3: Unresolved value, like newly added type not in old version ValueType enum
         tool = Tool(name="mock", type="python", inputs={"int_input": InputDefinition(type=["A_good_type"])})
         node = Node(
             name="mock",

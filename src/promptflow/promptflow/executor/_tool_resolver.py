@@ -12,6 +12,7 @@ from typing import Callable, List, Optional
 
 from promptflow._core.connection_manager import ConnectionManager
 from promptflow._core.tools_manager import BuiltinsManager, ToolLoader, connection_type_to_api_mapping
+from promptflow._utils.logger_utils import logger
 from promptflow._utils.multimedia_utils import create_image, load_multimedia_data_recursively
 from promptflow._utils.tool_utils import get_inputs_for_prompt_template, get_prompt_param_name_from_func
 from promptflow.contracts.flow import InputAssignment, InputValueType, Node, ToolSourceType
@@ -106,7 +107,12 @@ class ToolResolver:
                 updated_inputs[k].value = create_image(v.value)
             elif isinstance(value_type, ValueType):
                 try:
-                    updated_inputs[k].value = value_type.parse(v.value)
+                    updated_inputs[k].value = v.value
+                    # Don't convert value type for literal node input.
+                    # We don't covert flow input/ node reference type by tool definition.
+                    # So, don't have reason to convert literal node input type.
+                    if not isinstance(updated_inputs[k].value, value_type.get_class()):
+                        logger.warning(f"Literal node input {k} is not type {value_type}, received type is {type(v)}.")
                     updated_inputs[k].value = load_multimedia_data_recursively(updated_inputs[k].value)
                 except Exception as e:
                     msg = f"Input '{k}' for node '{node.name}' of value {v.value} is not type {value_type}."
