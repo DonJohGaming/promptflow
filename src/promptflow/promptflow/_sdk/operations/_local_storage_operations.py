@@ -38,6 +38,8 @@ from promptflow.contracts.run_info import FlowRunInfo
 from promptflow.contracts.run_info import RunInfo as NodeRunInfo
 from promptflow.contracts.run_info import Status
 from promptflow.contracts.run_mode import RunMode
+from promptflow.exceptions import UserErrorException
+from promptflow.executor._result import LineResult
 from promptflow.executor.flow_executor import BulkResult
 from promptflow.storage import AbstractRunStorage
 
@@ -241,7 +243,14 @@ class LocalStorageOperations(AbstractRunStorage):
             flow_dag = yaml.safe_load(f)
         return flow_dag["inputs"], flow_dag["outputs"]
 
-    def dump_inputs(self, inputs: RunInputs) -> None:
+    def dump_inputs(self, line_results: List[LineResult]) -> None:
+        inputs = []
+        for line_result in line_results:
+            try:
+                inputs.append(line_result.run_info.inputs)
+            except Exception:
+                # ignore when single line doesn't have inputs
+                pass
         df = pd.DataFrame(inputs)
         with open(self._inputs_path, mode="w", encoding=DEFAULT_ENCODING) as f:
             # policy: http://policheck.azurewebsites.net/Pages/TermInfo.aspx?LCID=9&TermID=203588
@@ -288,24 +297,25 @@ class LocalStorageOperations(AbstractRunStorage):
         """
         # extract line run errors
         errors, line_runs = [], []
-        try:
-            for line_result in bulk_results.line_results:
-                if line_result.run_info.error is not None:
-                    errors.append(
-                        {
-                            "line number": line_result.run_info.index,
-                            "error": line_result.run_info.error,
-                        }
-                    )
-                line_runs.append(line_result)
-        except Exception:
-            pass
+        if bulk_results:
+            try:
+                for line_result in bulk_results.line_results:
+                    if line_result.run_info.error is not None:
+                        errors.append(
+                            {
+                                "line number": line_result.run_info.index,
+                                "error": line_result.run_info.error,
+                            }
+                        )
+                    line_runs.append(line_result)
+            except Exception:
+                pass
 
-        # won't dump exception if errors not found in bulk_results
-        if not errors:
-            return
+            # won't dump exception if errors not found in bulk_results
+            if not errors:
+                return
 
-        if exception is None:
+        if exception is None or not isinstance(exception, UserErrorException):
             # use first line run error message as exception message if no exception raised
             error = errors[0]
             try:
@@ -397,6 +407,7 @@ class LocalStorageOperations(AbstractRunStorage):
             return
         # The executor will persist outputs to output directory, so only dump metrics here for the time being.
         self.dump_metrics(result.metrics)
+        self.dump_inputs(result.line_results)
 
     def _persist_run_multimedia(self, run_info: Union[FlowRunInfo, NodeRunInfo], folder_path: Path):
         if run_info.inputs:

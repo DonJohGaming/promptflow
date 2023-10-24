@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Union
 
 from promptflow._utils.load_data import load_data
-from promptflow._utils.multimedia_utils import persist_multimedia_data, resolve_image_path
+from promptflow._utils.multimedia_utils import resolve_image_path
 from promptflow._utils.utils import dump_list_to_jsonl
 from promptflow.executor._result import BulkResult
 from promptflow.executor.flow_executor import FlowExecutor
@@ -45,18 +45,15 @@ class BatchEngine:
         :return: The result of this batch run
         :rtype: ~promptflow.executor._result.BulkResult
         """
-        input_dicts = self._get_input_dicts(input_dirs, inputs_mapping)
-        batch_result = self.flow_executor.exec_bulk(input_dicts, run_id)
-        batch_result.outputs = self._persist_outputs(batch_result.outputs, output_dir)
-        return batch_result
-
-    def _get_input_dicts(self, input_dirs: Dict[str, str], inputs_mapping: Dict[str, str]):
-        """Resolve input data from input dirs and apply inputs mapping
-
-        TODO: After SDK/CLI can resolve input data from input dirs, this method can be removed.
-        """
+        # resolve input data from input dirs and apply inputs mapping
         input_dicts = self._resolve_data(input_dirs)
-        return self.flow_executor.validate_and_apply_inputs_mapping(input_dicts, inputs_mapping)
+        mapped_inputs = self.flow_executor.validate_and_apply_inputs_mapping(input_dicts, inputs_mapping)
+        # run flow in batch mode
+        output_dir = self._resolve_dir(output_dir)
+        batch_result = self.flow_executor.exec_bulk(mapped_inputs, run_id, output_dir=output_dir)
+        # persist outputs to output dir
+        self._persist_outputs(batch_result.outputs, output_dir)
+        return batch_result
 
     def _resolve_data(self, input_dirs: Dict[str, str]):
         """Resolve input data from input dirs"""
@@ -88,11 +85,6 @@ class BatchEngine:
         return one_line_data
 
     def _persist_outputs(self, outputs: List[Mapping[str, Any]], output_dir: Path):
-        """Persist outputs to output directory"""
-        output_dir = self._resolve_dir(output_dir)
-        # persist images to output directory
-        outputs = [persist_multimedia_data(output, output_dir) for output in outputs]
-        # persist outputs to json line file
+        """Persist outputs to json line file in output directory"""
         output_file = output_dir / OUTPUT_FILE_NAME
         dump_list_to_jsonl(output_file, outputs)
-        return outputs
