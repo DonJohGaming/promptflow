@@ -79,15 +79,18 @@ class LoggerOperations(LogContext):
     def __enter__(self):
         log_path = Path(self.log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        if log_path.exists():
-            # Clean up previous log content
-            try:
-                with open(log_path, mode="w", encoding=DEFAULT_ENCODING) as file:
-                    file.truncate(0)
-            except Exception as e:
-                logger.warning(f"Failed to clean up the previous log content because {e}")
-        else:
+        if self.run_mode == RunMode.Batch:
             log_path.touch(exist_ok=True)
+        else:
+            if log_path.exists():
+                # for non batch run, clean up previous log content
+                try:
+                    with open(log_path, mode="w", encoding=DEFAULT_ENCODING) as file:
+                        file.truncate(0)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up the previous log content because {e}")
+            else:
+                log_path.touch()
 
         for _logger in self._get_execute_loggers_list():
             for handler in _logger.handlers:
@@ -315,6 +318,7 @@ class LocalStorageOperations(AbstractRunStorage):
             if not errors:
                 return
 
+        # SystemError will be raised above and users can see it, so we don't need to dump it.
         if exception is None or not isinstance(exception, UserErrorException):
             # use first line run error message as exception message if no exception raised
             error = errors[0]
@@ -356,6 +360,8 @@ class LocalStorageOperations(AbstractRunStorage):
             # collect from local files and concat in the memory
             flow_runs, node_runs = [], []
             for line_run_record_file in sorted(self._run_infos_folder.iterdir()):
+                # In addition to the output jsonl files, there may be multimedia files in the output folder,
+                # so we should skip them.
                 if line_run_record_file.suffix.lower() != ".jsonl":
                     continue
                 with open(line_run_record_file, mode="r", encoding=DEFAULT_ENCODING) as f:
@@ -413,9 +419,8 @@ class LocalStorageOperations(AbstractRunStorage):
         if run_info.inputs:
             run_info.inputs = self._serialize_multimedia(run_info.inputs, folder_path)
         if run_info.output:
-            serialized_output = self._serialize_multimedia(run_info.output, folder_path)
-            run_info.output = serialized_output
-            run_info.result = serialized_output
+            run_info.output = self._serialize_multimedia(run_info.output, folder_path)
+            run_info.result = None
         if run_info.api_calls:
             run_info.api_calls = self._serialize_multimedia(run_info.api_calls, folder_path)
 

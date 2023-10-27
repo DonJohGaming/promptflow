@@ -31,7 +31,7 @@ def _get_extension_from_mime_type(mime_type: str):
     return ext
 
 
-def _is_multimedia_dict(multimedia_dict: dict):
+def is_multimedia_dict(multimedia_dict: dict):
     if len(multimedia_dict) != 1:
         return False
     key = list(multimedia_dict.keys())[0]
@@ -122,7 +122,7 @@ def create_image(value: any):
     if isinstance(value, PFBytes):
         return value
     elif isinstance(value, dict):
-        if _is_multimedia_dict(value):
+        if is_multimedia_dict(value):
             return _create_image_from_dict(value)
         else:
             raise InvalidImageInput(
@@ -147,7 +147,7 @@ def _save_image_to_file(
     file_name = f"{file_name}.{ext}" if ext else file_name
     image_path = str(relative_path / file_name) if relative_path else file_name
     if use_absolute_path:
-        image_path = str(folder_path / image_path)
+        image_path = str(Path(folder_path / image_path).resolve())
     image_reference = {f"data:{image._mime_type};path": image_path}
     path = folder_path / relative_path if relative_path else folder_path
     os.makedirs(path, exist_ok=True)
@@ -161,6 +161,7 @@ def get_file_reference_encoder(folder_path: Path, relative_path: Path = None, *,
         """Dumps PFBytes to a file and returns its reference."""
         if isinstance(obj, PFBytes):
             file_name = str(uuid.uuid4())
+            # If use_absolute_path is True, the image file path in image dictionary will be absolute path.
             return _save_image_to_file(obj, file_name, folder_path, relative_path, use_absolute_path)
         raise TypeError(f"Not supported to dump type '{type(obj).__name__}'.")
 
@@ -212,7 +213,7 @@ def load_multimedia_data_recursively(value: Any):
     if isinstance(value, list):
         return [load_multimedia_data_recursively(item) for item in value]
     elif isinstance(value, dict):
-        if _is_multimedia_dict(value):
+        if is_multimedia_dict(value):
             return _create_image_from_dict(value)
         else:
             return {k: load_multimedia_data_recursively(v) for k, v in value.items()}
@@ -220,10 +221,22 @@ def load_multimedia_data_recursively(value: Any):
         return value
 
 
+def resolve_multimedia_data_recursively(input_dir: Path, value: Any):
+    if isinstance(value, list):
+        return [resolve_multimedia_data_recursively(input_dir, item) for item in value]
+    elif isinstance(value, dict):
+        if is_multimedia_dict(value):
+            return resolve_image_path(input_dir, value)
+        else:
+            return {k: resolve_multimedia_data_recursively(input_dir, v) for k, v in value.items()}
+    else:
+        return value
+
+
 def resolve_image_path(input_dir: Path, image_dict: dict):
     """Resolve image path to absolute path in image dict"""
     input_dir = input_dir.parent if input_dir.is_file() else input_dir
-    if _is_multimedia_dict(image_dict):
+    if is_multimedia_dict(image_dict):
         for key in image_dict:
             _, resource = _get_multimedia_info(key)
             if resource == "path":

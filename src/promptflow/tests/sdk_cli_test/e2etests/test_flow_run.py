@@ -1,4 +1,3 @@
-import json
 import os
 import uuid
 from pathlib import Path
@@ -34,6 +33,13 @@ def create_run_against_multi_line_data(client) -> Run:
         flow=f"{FLOWS_DIR}/web_classification",
         data=f"{DATAS_DIR}/webClassification3.jsonl",
         column_mapping={"url": "${data.url}"},
+    )
+
+
+def create_run_against_multi_line_data_without_llm(client: PFClient) -> Run:
+    return client.run(
+        flow=f"{FLOWS_DIR}/print_env_var",
+        data=f"{DATAS_DIR}/env_var_names.jsonl",
     )
 
 
@@ -334,8 +340,9 @@ class TestFlowRun:
         )
 
         local_storage = LocalStorageOperations(run)
-        with open(local_storage._exception_path, "r") as f:
-            exception = json.load(f)
+        assert os.path.exists(local_storage._exception_path)
+
+        exception = local_storage.load_exception()
         assert "The input for batch run is incorrect. Couldn't find these mapping relations" in exception["message"]
         assert exception["code"] == "BulkRunException"
 
@@ -593,8 +600,9 @@ class TestFlowRun:
         )
 
         local_storage = LocalStorageOperations(run)
-        with open(local_storage._exception_path, "r") as f:
-            exception = json.load(f)
+        assert os.path.exists(local_storage._exception_path)
+
+        exception = local_storage.load_exception()
         assert "The input for batch run is incorrect. Couldn't find these mapping relations" in exception["message"]
         assert exception["code"] == "BulkRunException"
 
@@ -731,7 +739,7 @@ class TestFlowRun:
 
         assert os.path.exists(local_storage._exception_path)
         exception = local_storage.load_exception()
-        assert "Failed to run 1/1 lines: First error message is" in exception["message"]
+        assert "Failed to run 1/1 lines. First error message is" in exception["message"]
         # line run failures will be stored in additionalInfo
         assert len(exception["additionalInfo"][0]["info"]["errors"]) == 1
 
@@ -776,6 +784,15 @@ class TestFlowRun:
             "line_number": [0],
             "url": ["https://www.youtube.com/watch?v=o5ZQyXaAv1g"],
         }
+
+    def test_executor_logs_in_batch_run_logs(self, pf: PFClient) -> None:
+        run = create_run_against_multi_line_data_without_llm(pf)
+        local_storage = LocalStorageOperations(run=run)
+        logs = local_storage.logger.get_logs()
+        # below warning is printed by executor before the batch run executed
+        # the warning message results from we do not use column mapping
+        # so it is expected to be printed here
+        assert "Starting run without column mapping may lead to unexpected results." in logs
 
     def test_basic_image_flow_bulk_run(self, pf, local_client) -> None:
         image_flow_path = f"{FLOWS_DIR}/python_tool_with_simple_image"
